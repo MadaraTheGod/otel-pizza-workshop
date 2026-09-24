@@ -8,14 +8,44 @@
 #
 # An `.env` anywhere else (the repo root, for example) is NOT read.
 
+# Shared OpenTelemetry settings for the Node services. Each service adds its own
+# OTEL_SERVICE_NAME on top of these.
+x-otel-defaults: &otel-defaults
+  # All three signals go to the local Collector, which forwards them to Dash0.
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+  OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+  OTEL_TRACES_EXPORTER: otlp
+  OTEL_METRICS_EXPORTER: otlp
+  OTEL_LOGS_EXPORTER: otlp
+  OTEL_NODE_RESOURCE_DETECTORS: env,host,os,serviceinstance,container
+  OTEL_RESOURCE_ATTRIBUTES: service.namespace=pizza-app,deployment.environment.name=${DASH0_ENVIRONMENT:-workshop},vcs.repository.url.full=${VCS_REPOSITORY_URL:-https://github.com/MadaraTheGod/otel-pizza-workshop}
+  # Set OTEL_SDK_DISABLED=true in pizza-app/.env to run without telemetry.
+  OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-false}
+
 services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.161.0
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./otelcol-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    environment:
+      DASH0_ENDPOINT: ${DASH0_ENDPOINT:?set DASH0_ENDPOINT in pizza-app/.env}
+      DASH0_AUTH_TOKEN: ${DASH0_AUTH_TOKEN:?set DASH0_AUTH_TOKEN in pizza-app/.env}
+      DASH0_DATASET: ${DASH0_DATASET:-default}
+    ports:
+      # 4318 is published because the browser posts telemetry to it directly.
+      - "4317:4317"
+      - "4318:4318"
+
   order-service:
     build: ./order-service
     ports:
       - "3000:3000"
     environment:
-      - KITCHEN_SERVICE_URL=http://kitchen-service:3001
-      - DELIVERY_SERVICE_URL=http://delivery-service:3002
+      <<: *otel-defaults
+      OTEL_SERVICE_NAME: order-service
+      KITCHEN_SERVICE_URL: http://kitchen-service:3001
+      DELIVERY_SERVICE_URL: http://delivery-service:3002
     healthcheck:
       test:
         - CMD
@@ -31,13 +61,17 @@ services:
         condition: service_healthy
       delivery-service:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
 
   kitchen-service:
     build: ./kitchen-service
     ports:
       - "3001:3001"
     environment:
-      - SLOW_KITCHEN=${SLOW_KITCHEN:-false}
+      <<: *otel-defaults
+      OTEL_SERVICE_NAME: kitchen-service
+      SLOW_KITCHEN: ${SLOW_KITCHEN:-false}
     healthcheck:
       test:
         - CMD
@@ -48,13 +82,18 @@ services:
       timeout: 3s
       retries: 12
       start_period: 5s
+    depends_on:
+      otel-collector:
+        condition: service_started
 
   delivery-service:
     build: ./delivery-service
     ports:
       - "3002:3002"
     environment:
-      - NO_DRIVERS=${NO_DRIVERS:-false}
+      <<: *otel-defaults
+      OTEL_SERVICE_NAME: delivery-service
+      NO_DRIVERS: ${NO_DRIVERS:-false}
     healthcheck:
       test:
         - CMD
@@ -65,6 +104,9 @@ services:
       timeout: 3s
       retries: 12
       start_period: 5s
+    depends_on:
+      otel-collector:
+        condition: service_started
 
   frontend:
     build: ./frontend
@@ -73,3 +115,5 @@ services:
     depends_on:
       order-service:
         condition: service_healthy
+      otel-collector:
+        condition: service_started

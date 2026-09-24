@@ -8,6 +8,53 @@
          Set it explicitly if the Order Service is not on the machine serving this page,
          e.g. content="https://my-vm.example.com:3000" -->
     <meta name="order-api-url" content="">
+    <!-- OTLP/HTTP endpoint browser telemetry is sent to. Leave empty to auto-detect
+         (same host, port 4318 - the OpenTelemetry Collector from docker-compose.yml). -->
+    <meta name="otlp-http-url" content="">
+    <script>
+        (function (d, a, s, h, z, e, r, o) {
+            d[a] ||
+                ((z = d[a] =
+                    function () {
+                        h.push(arguments);
+                    }),
+                (z._t = new Date()),
+                (z._v = 1),
+                (h = z._q = []));
+        })(window, "dash0");
+
+        window.ORDER_API_URL = (
+            new URLSearchParams(window.location.search).get('api')
+            || window.ORDER_API_URL
+            || document.querySelector('meta[name="order-api-url"]').content
+            || `${window.location.protocol}//${window.location.hostname}:3000`
+        ).replace(/\/+$/, '');
+
+        const OTLP_HTTP_URL = (
+            new URLSearchParams(window.location.search).get('otlp')
+            || document.querySelector('meta[name="otlp-http-url"]').content
+            || `${window.location.protocol}//${window.location.hostname}:4318`
+        ).replace(/\/+$/, '');
+
+        dash0('init', {
+            serviceName: 'pizza-frontend',
+            endpoint: {
+                url: OTLP_HTTP_URL,
+                // The Collector adds the real Dash0 credentials, so no token is
+                // shipped to the browser. It ignores this placeholder.
+                authToken: 'not-used-local-collector'
+            },
+            // The Order Service is a different origin (port 3000), so trace
+            // context has to be propagated to it explicitly.
+            propagators: [
+                {
+                    type: 'traceparent',
+                    match: [new RegExp('^' + window.ORDER_API_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))]
+                }
+            ]
+        });
+    </script>
+    <script src="https://unpkg.com/@dash0/sdk-web@0.27.0/dist/dash0.iife.js" defer crossorigin="anonymous"></script>
     <style>
         * {
             margin: 0;

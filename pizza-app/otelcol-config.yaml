@@ -1,0 +1,56 @@
+# OpenTelemetry Collector - receives telemetry from the pizza services and the
+# browser, then forwards it to Dash0.
+#
+# The Dash0 credentials come from environment variables, which docker-compose.yml
+# passes through from `pizza-app/.env`. Nothing secret belongs in this file.
+
+receivers:
+  otlp:
+    protocols:
+      # The Node services export over OTLP/gRPC's sibling, OTLP/HTTP (4318).
+      # gRPC (4317) is enabled too so other tools can point here unchanged.
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+        # The browser posts telemetry to this receiver from the frontend origin,
+        # so it has to answer CORS preflight requests.
+        cors:
+          allowed_origins:
+            - http://localhost:8080
+            - http://127.0.0.1:8080
+            - http://*:8080
+            - https://*:8080
+          allowed_headers:
+            - "*"
+
+processors:
+  # Groups telemetry into batches instead of one request per span.
+  batch:
+    send_batch_size: 512
+    timeout: 2s
+
+exporters:
+  otlp/dash0:
+    endpoint: ${env:DASH0_ENDPOINT}
+    headers:
+      Authorization: Bearer ${env:DASH0_AUTH_TOKEN}
+      Dash0-Dataset: ${env:DASH0_DATASET:-default}
+
+service:
+  telemetry:
+    logs:
+      level: info
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/dash0]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/dash0]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/dash0]
