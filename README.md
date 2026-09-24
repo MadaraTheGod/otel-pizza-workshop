@@ -1,15 +1,20 @@
 # OpenTelemetry Pizza Workshop
 
 A small pizza-ordering app built from three Node services and a web frontend.
-It ships with no instrumentation. Adding that is the workshop; this file only
-covers getting the app running.
+It is instrumented with OpenTelemetry and sends traces, metrics and logs to
+Dash0 through an OpenTelemetry Collector — see
+[pizza-app/README.md](pizza-app/README.md#telemetry) for how that is wired up.
+This file only covers getting the app running.
 
 ## Prerequisites
 
 - **Docker Desktop** — [download here](https://www.docker.com/products/docker-desktop)
 - **Node.js** v18 or higher — [download here](https://nodejs.org/) (only needed
   once you start changing the services)
-- Ports `3000`, `3001`, `3002` and `8080` free
+- Ports `3000`, `3001`, `3002`, `4317`, `4318` and `8080` free
+- A Dash0 auth token and your region's OTLP endpoint
+  ([Settings → Auth Tokens](https://app.dash0.com/settings/auth-tokens),
+  [Settings → Endpoints](https://app.dash0.com/settings/endpoints))
 
 ## Get the code
 
@@ -34,11 +39,13 @@ git remote -v
 
 ```bash
 cd pizza-app
+cp .env.template .env   # then fill in DASH0_AUTH_TOKEN and DASH0_ENDPOINT
 docker compose up
 ```
 
-The first build takes a few minutes. When all four containers are up, open
-<http://localhost:8080> and order a pizza.
+The first build takes a few minutes. When all five containers are up, open
+<http://localhost:8080> and order a pizza. The order shows up in Dash0 as a
+single trace spanning the browser and all three services.
 
 Stop with `Ctrl+C`, or:
 
@@ -56,6 +63,7 @@ docker compose down --rmi all  # and images
 | Order Service | 3000 | Takes the order, calls the other two |
 | Kitchen Service | 3001 | Checks availability, cooks |
 | Delivery Service | 3002 | Assigns a driver |
+| OTel Collector | 4317/4318 | Forwards telemetry to Dash0 |
 
 Logs from all four are interleaved in the terminal you ran `docker compose up`
 in. For one service on its own:
